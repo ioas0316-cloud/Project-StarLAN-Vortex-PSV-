@@ -2,10 +2,10 @@ import time
 import os
 import random
 import psutil
-from lib.phase_inverter import PhaseInverterGate
+from lib.phase_inverter import SphericalRotorAddressGate
 
 def simulate_metric_1_hologram_tracking(gate, payload_size):
-    iterations = 1000
+    iterations = 10000000
     chunk_a = os.urandom(payload_size)
 
     t0 = time.perf_counter_ns()
@@ -25,7 +25,7 @@ def simulate_metric_1_hologram_tracking(gate, payload_size):
     return legacy_time, psv_time
 
 def simulate_metric_2_spike_resistance(gate, normal_size, spike_size):
-    iterations = 500
+    iterations = 10000000
     normal_chunk = os.urandom(normal_size)
     spike_chunk = os.urandom(spike_size)
 
@@ -45,7 +45,7 @@ def simulate_metric_2_spike_resistance(gate, normal_size, spike_size):
     return normal_ops, spike_ops
 
 def simulate_metric_3_fec_recovery(gate, payload_size):
-    iterations = 1000
+    iterations = 10000000
     chunk_a = os.urandom(payload_size)
     chunk_b = os.urandom(payload_size)
     parity_c = bytes(a ^ b for a, b in zip(chunk_a, chunk_b))
@@ -71,11 +71,11 @@ def simulate_metric_3_fec_recovery(gate, payload_size):
 def run_all_metrics():
     print("📊 [PSV-Engine] 7대 하드코어 벤치마크 사출 중...")
 
-    if not os.path.exists("src/phase_kernel.so"):
-        print("⚠️ [Fatal] C++ 커널 라이브러리(src/phase_kernel.so)가 빌드되지 않았습니다.")
+    if not os.path.exists("lib/phase_kernel.so"):
+        print("⚠️ [Fatal] C++ 커널 라이브러리(lib/phase_kernel.so)가 빌드되지 않았습니다.")
         return
 
-    gate = PhaseInverterGate(static_vram_limit=3 * 1024 * 1024 * 1024)
+    gate = SphericalRotorAddressGate(static_vram_limit=3 * 1024 * 1024 * 1024, lib_path="lib/phase_kernel.so")
     payload_size = 8192
 
     m1_leg, m1_psv = simulate_metric_1_hologram_tracking(gate, payload_size)
