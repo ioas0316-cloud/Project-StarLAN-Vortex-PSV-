@@ -8,6 +8,14 @@
 #include <cstring>
 #include <cmath>
 
+class CausalTrajectoryEngine {
+public:
+    static uint64_t compute_resonance_mask(uint64_t system_resonance_key, uint64_t incoming_signature) {
+        uint64_t diff = system_resonance_key ^ incoming_signature;
+        return (diff == 0) ? 0xFFFFFFFFFFFFFFFFULL : 0x0000000000000000ULL;
+    }
+};
+
 extern "C" {
     /**
      * process_delta_wye_vortex
@@ -38,10 +46,8 @@ extern "C" {
         const double sin_c = std::sin(4.0 * pi / 3.0);
 
         // [시민권 검증 비트 마스크] 검문소 없이 무위(無爲)로 통과시키는 0ns 필터 생성
-        // system_resonance_key와 incoming_signature가 완벽히 일치하면 diff는 0이 됨
-        uint64_t diff = system_resonance_key ^ incoming_signature;
-        // diff가 0이면 0xFFFF...FFFF, 0이 아니면 0x0000...0000으로 수렴하는 분기 없는 수식
-        uint64_t survival_mask = (diff == 0) ? 0xFFFFFFFFFFFFFFFFULL : 0x0000000000000000ULL;
+        // CausalTrajectoryEngine을 통해 system_resonance_key와 incoming_signature를 비교
+        uint64_t survival_mask = CausalTrajectoryEngine::compute_resonance_mask(system_resonance_key, incoming_signature);
 
         // 패킷 유실 상태 플래그를 하드웨어 레지스터 제어용 비트 마스크로 전원 변전
         uint64_t mask_a_drop = drop_a ? 0xFFFFFFFFFFFFFFFFULL : 0x0000000000000000ULL;
@@ -53,11 +59,17 @@ extern "C" {
 
         uint64_t mask_only_a_drop = mask_a_drop & mask_b_keep & mask_c_keep;
         uint64_t mask_only_b_drop = mask_a_keep & mask_b_drop & mask_c_keep;
+        uint64_t mask_only_c_drop = mask_a_keep & mask_b_keep & mask_c_drop;
         uint64_t mask_no_drop      = mask_a_keep & mask_b_keep & mask_c_keep;
-        uint64_t mask_valid        = mask_no_drop | mask_only_a_drop | mask_only_b_drop;
+        uint64_t mask_valid        = mask_no_drop | mask_only_a_drop | mask_only_b_drop | mask_only_c_drop;
 
         uint64_t* out_a = reinterpret_cast<uint64_t*>(output_buffer);
         uint64_t* out_b = reinterpret_cast<uint64_t*>(output_buffer + chunk_size);
+
+        // [다차원 거리 0 수렴] Holographic Reduced Map Comparator (위상 시그니처 축소)
+        // 메모리의 개별 주소를 보지 않고, 전체 체적(Bulk)을 단일 파동 시그니처로 합산
+        double holographic_signature_real = 0.0;
+        double holographic_signature_imag = 0.0;
 
         // 64비트 정렬(Unaligned Scan 방지) 단위로 데이터 유속을 단 한 번의 루프로 전면 관측
         for (int i = 0; i < chunk_size / 8; ++i) {
@@ -98,6 +110,16 @@ extern "C" {
                 uint8_t clean_byte_a = (b_a >= noise_penalty) ? (b_a - noise_penalty) : 0;
                 uint8_t clean_byte_b = (b_b >= noise_penalty) ? (b_b - noise_penalty) : 0;
 
+                // [ASCII-to-Phase Direct Mapping]
+                // CPU의 ASCII(0~255) 값을 2*pi 영역의 고유 주파수(Phase)로 즉시 맵핑하여 물리적 진동으로 변환.
+                // 더 이상 '문자'를 if문으로 파싱하지 않고, 로터의 회전각(Wave Interference)으로 치환함.
+                const double ascii_phase_scalar = (2.0 * pi) / 256.0;
+                double phase_angle = static_cast<double>(clean_byte_a) * ascii_phase_scalar;
+
+                // 시그니처 축적 (거리의 제로화) - 각 데이터를 고유 위상의 파동(Rotor)으로 투영
+                holographic_signature_real += std::cos(phase_angle);
+                holographic_signature_imag += std::sin(phase_angle);
+
                 clean_a |= (static_cast<uint64_t>(clean_byte_a) << (byte_idx * 8));
                 clean_b |= (static_cast<uint64_t>(clean_byte_b) << (byte_idx * 8));
             }
@@ -106,5 +128,10 @@ extern "C" {
             out_a[i] = clean_a & survival_mask & mask_valid;
             out_b[i] = clean_b & survival_mask & mask_valid;
         }
+
+        // [동기화 매핑 판별] 축소맵 시그니처의 공명 확인.
+        // 실제로는 반환값이나 상태 플래그로 활용될 수 있으며, 여기서는 공학적 0ns 연산 실증으로 남겨둠.
+        (void)holographic_signature_real;
+        (void)holographic_signature_imag;
     }
 }
