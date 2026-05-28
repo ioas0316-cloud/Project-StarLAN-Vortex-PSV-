@@ -79,37 +79,65 @@ extern "C" {
         // 0x00 - 1 = 0xFF, so: 0x00 - (!diff) = 0xFF? No, 0 - 1 = 0xFF.
         uint8_t survival_mask = static_cast<uint8_t>(0 - static_cast<uint8_t>(!diff));
 
-        // 2. Direct memory write (Zero Copy Overhead) & FEC parity
+        // 2. Direct memory write (Zero Copy Overhead) & FEC parity using Branchless Logic & Delta-Wye Triple Rotor
         uint8_t* out_a = output_buffer;
         uint8_t* out_b = output_buffer + chunk_size;
 
-        if (drop_a && !drop_b && !drop_c) {
-            for(int i=0; i<chunk_size; ++i) {
-                out_a[i] = (chunk_b[i] ^ parity_c[i]) & survival_mask;
-                out_b[i] = chunk_b[i] & survival_mask;
-            }
-        }
-        else if (!drop_a && drop_b && !drop_c) {
-            for(int i=0; i<chunk_size; ++i) {
-                out_a[i] = chunk_a[i] & survival_mask;
-                out_b[i] = (chunk_a[i] ^ parity_c[i]) & survival_mask;
-            }
-        }
-        else if (!drop_a && !drop_b && drop_c) {
-            for(int i=0; i<chunk_size; ++i) {
-                out_a[i] = chunk_a[i] & survival_mask;
-                out_b[i] = chunk_b[i] & survival_mask;
-            }
-        }
-        else if (!drop_a && !drop_b && !drop_c) {
-            for(int i=0; i<chunk_size; ++i) {
-                out_a[i] = chunk_a[i] & survival_mask;
-                out_b[i] = chunk_b[i] & survival_mask;
-            }
-        }
-        else {
-            std::memset(out_a, 0, chunk_size);
-            std::memset(out_b, 0, chunk_size);
+        uint8_t mask_a_drop = static_cast<uint8_t>(0 - static_cast<uint8_t>(drop_a));
+        uint8_t mask_a_keep = ~mask_a_drop;
+        uint8_t mask_b_drop = static_cast<uint8_t>(0 - static_cast<uint8_t>(drop_b));
+        uint8_t mask_b_keep = ~mask_b_drop;
+        uint8_t mask_c_drop = static_cast<uint8_t>(0 - static_cast<uint8_t>(drop_c));
+        uint8_t mask_c_keep = ~mask_c_drop;
+
+        uint8_t mask_only_a_drop = mask_a_drop & mask_b_keep & mask_c_keep;
+        uint8_t mask_only_b_drop = mask_a_keep & mask_b_drop & mask_c_keep;
+        uint8_t mask_only_c_drop = mask_a_keep & mask_b_keep & mask_c_drop;
+        uint8_t mask_no_drop     = mask_a_keep & mask_b_keep & mask_c_keep;
+
+        uint8_t mask_valid = mask_no_drop | mask_only_a_drop | mask_only_b_drop | mask_only_c_drop;
+
+        const double pi = 3.14159265358979323846;
+        const double angle_b = 2.0 * pi / 3.0; // 120 degrees
+        const double angle_c = 4.0 * pi / 3.0; // 240 degrees
+
+        double cos_b = std::cos(angle_b);
+        double sin_b = std::sin(angle_b);
+        double cos_c = std::cos(angle_c);
+        double sin_c = std::sin(angle_c);
+
+        for(int i=0; i<chunk_size; ++i) {
+            uint8_t orig_a = chunk_a[i];
+            uint8_t orig_b = chunk_b[i];
+            uint8_t orig_c = parity_c[i];
+
+            // Branchless XOR recovery
+            uint8_t rec_a = (orig_a & mask_a_keep) | ((orig_b ^ orig_c) & mask_only_a_drop);
+            uint8_t rec_b = (orig_b & mask_b_keep) | ((orig_a ^ orig_c) & mask_only_b_drop);
+
+            // Delta-Wye Neutral Point Unbalanced Voltage Offset Calculation (Double Precision)
+            double val_a = static_cast<double>(orig_a);
+            double val_b = static_cast<double>(orig_b);
+            double val_c = static_cast<double>(orig_c);
+
+            double real_sum = val_a + val_b * cos_b + val_c * cos_c;
+            double imag_sum = val_b * sin_b + val_c * sin_c;
+
+            double neutral_real = real_sum / 3.0;
+            double neutral_imag = imag_sum / 3.0;
+
+            double noise_offset = std::sqrt(neutral_real * neutral_real + neutral_imag * neutral_imag);
+            uint8_t noise_penalty = static_cast<uint8_t>(noise_offset * 0.01); // Scale down to apply gentle noise filter
+
+            // Branchless noise subtraction (prevent underflow)
+            uint8_t underflow_mask_a = static_cast<uint8_t>(0 - static_cast<uint8_t>(rec_a >= noise_penalty));
+            uint8_t clean_a = (rec_a - noise_penalty) & underflow_mask_a;
+
+            uint8_t underflow_mask_b = static_cast<uint8_t>(0 - static_cast<uint8_t>(rec_b >= noise_penalty));
+            uint8_t clean_b = (rec_b - noise_penalty) & underflow_mask_b;
+
+            out_a[i] = clean_a & survival_mask & mask_valid;
+            out_b[i] = clean_b & survival_mask & mask_valid;
         }
 
         // 3. Volumetric Tracker
