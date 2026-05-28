@@ -1,11 +1,20 @@
 import ctypes
 import os
+import subprocess
 
 class PhaseInverterGate:
     def __init__(self, static_vram_limit=3 * 1024 * 1024 * 1024, lib_path="src/phase_kernel.so"):
         self.static_vram_pool_size = float(static_vram_limit)
 
         self.is_cpp_ready = False
+
+        # Ensure the shared library is built
+        if not os.path.exists(lib_path):
+            try:
+                subprocess.run(["g++", "-shared", "-fPIC", "-o", lib_path, "src/phase_kernel.cpp"], check=True)
+            except Exception as e:
+                print(f"⚠️ [PhaseInverterGate] 빌드 에러: {e}")
+
         try:
             if os.path.exists(lib_path):
                 self.lib = ctypes.CDLL(os.path.abspath(lib_path))
@@ -92,8 +101,13 @@ class PhaseInverterGate:
 
             self.internal_rotor = [int_past.value, int_present.value, int_future.value]
 
-            output_mass = int(abs(in_present)) # Dummy logic to get output mass
-        else:
-            output_mass = int(raw_len) # Fallback
+            # Use original payload, but just modulated by the PLL synchronized frequency multiplier
+            # Real applications would implement a true erasure coding here over multiple chunks.
+            frequency_multiplier = abs(in_present)
 
-        return b'\x00' * output_mass if output_mass > 0 else b''
+            if frequency_multiplier < 0.01:
+               return b"" # Jitter drop simulation
+
+            return current_bytes
+        else:
+            return current_bytes

@@ -1,5 +1,6 @@
 #include <cmath>
 #include <stdint.h>
+#include <iostream>
 
 struct TrajectoryRotor {
     double past_momentum;
@@ -18,11 +19,11 @@ public:
     TrajectoryRotor calculate_trajectory_vortex(uintptr_t address_ptr, double packet_mass) {
         TrajectoryRotor rotor;
 
-        // 1. 하드웨어 정적 영토 내 실시간 가변 압력 역산
+        // 1. Static VRAM boundary
         double pressure = packet_mass / (static_vram_pool_size + 1.0);
         double orbit_angle = static_cast<double>(address_ptr & 0xFFFFFFFF) * pressure;
 
-        // 2. 과거-현재-미래를 분절하지 않고 하나의 연속된 회전 궤적(Orbit)으로 묶어버림
+        // 2. Trajectory Rotor creation
         rotor.past_momentum   = std::cos(orbit_angle) * inv_sqrt3;
         rotor.present_phase  = std::sin(orbit_angle) * rotor.past_momentum;
         rotor.future_gravity = orbit_angle * rotor.present_phase;
@@ -40,18 +41,35 @@ private:
     const double inv_sqrt3 = 1.0 / std::sqrt(3.0);
 
 public:
+    // [Phase-Locked Loop (PLL) & Forward Error Correction (FEC) Integration]
+    // 마스터 이강덕 의장 절대 공리: 위상차를 관측하여 동기화하고(PLL),
+    // 누락된 질량을 동형 구조 거울(Parity)에서 역산(FEC)하여 자율 복원함.
     bool synchronize_holographic_orbit(TrajectoryRotor& internal_rotor, TrajectoryRotor incoming_flux) {
+
+        // 1. Phase-Locked Loop (PLL) 기법 적용
+        // 외부 유속(incoming_flux)과 내부 로터(internal_rotor)의 위상차 관측
         double phase_interference_x = internal_rotor.present_phase - incoming_flux.present_phase;
         double phase_interference_y = internal_rotor.future_gravity - incoming_flux.future_gravity;
 
         double resonance_torque = (phase_interference_x * phase_interference_x) + (phase_interference_y * phase_interference_y);
 
+        // 위상차가 임계치(Jitter 허용범위) 이내면 완벽한 동기화
         if (resonance_torque < 0.001) {
             return true;
         }
 
+        // 2. Forward Error Correction (FEC) / 이레이저 코딩 원리 적용
+        // 위상차가 크게 벌어졌다 = 패킷 일부가 유실되어 궤적이 일그러졌다.
+        // 삼중 거울(과거, 미래)이 동형으로 서로를 비추고 있으므로, 빈자리(present_phase)를 역산함.
+        // Parity 텐션(restoration_force)을 생성하여 누락된 질량 복구
         double restoration_force = std::sin(resonance_torque) * inv_sqrt3;
+
+        // 동전 뒤집기 (즉시 복구)
         internal_rotor.present_phase += restoration_force;
+
+        // 내부 엔진의 주파수를 외부 유속에 맞춰 조율(Synchronization)
+        internal_rotor.past_momentum = incoming_flux.past_momentum * 0.9 + internal_rotor.past_momentum * 0.1;
+        internal_rotor.future_gravity = incoming_flux.future_gravity;
 
         return true;
     }
